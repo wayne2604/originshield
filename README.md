@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OriginShield
 
-## Getting Started
+OriginShield is an AI content detection platform built with Next.js, Tailwind CSS, and Supabase. It verifies text, images, and URLs through first-party API routes so provider credentials stay on the server.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router
+- React 19
+- Tailwind CSS 4
+- Supabase Auth and database storage
+- Sapling AI for text and URL content detection
+- Sightengine for image AI/deepfake checks
+
+## Setup
+
+Install dependencies and start the app:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Create `.env.local` from `.env.example`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+SAPLING_API_KEY=
+SIGHTENGINE_API_USER=
+SIGHTENGINE_API_SECRET=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Supabase
 
-## Learn More
+The app expects a `scans` table with these columns:
 
-To learn more about Next.js, take a look at the following resources:
+- `id` text or uuid primary key
+- `content_hash` text
+- `type` text
+- `truth_score` integer
+- `verdict` text
+- `confidence_level` text
+- `c2pa_verified` boolean
+- `detected_artifacts` jsonb
+- `evidence_tags` jsonb
+- `breakdown` jsonb
+- `metadata` jsonb
+- `user_id` uuid nullable
+- `ip_address` text nullable
+- `created_at` timestamptz
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Authenticated scans are associated to a user with `user_id`. Guest scans are associated to `ip_address` and capped at 3 scans before the upgrade modal is shown.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Architecture
 
-## Deploy on Vercel
+- `src/app/api/verify/text` handles text detection through Sapling.
+- `src/app/api/verify/media` handles image metadata checks and Sightengine analysis.
+- `src/app/api/verify/url` fetches public page text and sends it through Sapling.
+- `src/lib/rateLimit.ts` provides in-memory per-IP quota protection for detection routes.
+- `src/components/landing` contains the landing page sections.
+- `src/components/auth` contains Supabase login/signup UI.
+- `src/app/profile` shows authenticated scan history.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Production Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Rotate any API keys that were ever exposed.
+- Set `NEXT_PUBLIC_SITE_URL` to the deployed origin so sitemap, robots, and social metadata resolve correctly.
+- Use provider-level quotas in addition to the app's in-memory rate limiter for multi-instance deployments.
+- Keep `.env.local` and all real secrets out of Git.
+
+## Checks
+
+```bash
+npm run lint
+npm run build
+```

@@ -3,6 +3,8 @@ import { createHash } from "crypto";
 import { createServerClient } from "@/lib/supabase/server";
 import { dbRowToScanResult } from "@/lib/supabase/mappers";
 import { analyzeMetadata } from "@/lib/services/metadataService";
+import { rateLimit } from "@/lib/rateLimit";
+import { checkUsageLimit } from "@/lib/services/usageService";
 import type { ScanResult, EvidenceTag, TruthLabel, ConfidenceLevel } from "@/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -116,6 +118,21 @@ function buildSightengineArtifacts(aiScore: number, deepfakeScore: number): stri
 
 export async function POST(req: NextRequest) {
   try {
+    const usage = await checkUsageLimit(req);
+    if (usage.status === "forbidden") {
+      return NextResponse.json(
+        { error: "Usage limit reached", code: "LIMIT_REACHED" },
+        { status: 403 }
+      );
+    }
+
+    const limited = rateLimit(req, {
+      keyPrefix: "verify:media",
+      limit: 6,
+      windowMs: 60_000,
+    });
+    if (limited) return limited;
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     if (!file) {
@@ -135,7 +152,30 @@ export async function POST(req: NextRequest) {
         .eq("content_hash", contentHash)
         .maybeSingle();
       if (cacheErr) console.warn("[media/cache-check]", cacheErr.message);
-      if (cached) return NextResponse.json(dbRowToScanResult(cached));
+      if (cached) {
+        const cachedResult = dbRowToScanResult(cached);
+        const timestamp = new Date().toISOString();
+        const id = crypto.randomUUID();
+
+        await supabase.from("scans").insert({
+          id,
+          content_hash: contentHash,
+          type: cachedResult.type,
+          truth_score: cachedResult.truthScore,
+          verdict: cachedResult.label,
+          confidence_level: cachedResult.confidenceLevel,
+          c2pa_verified: cachedResult.c2paVerified,
+          detected_artifacts: cachedResult.detectedArtifacts,
+          evidence_tags: cachedResult.evidenceTags,
+          breakdown: cachedResult.breakdown,
+          metadata: { cached_from: cached.id, user_id: usage.user?.id ?? null },
+          user_id: usage.user?.id ?? null,
+          ip_address: usage.ipAddress,
+          created_at: timestamp,
+        });
+
+        return NextResponse.json({ ...cachedResult, id, timestamp });
+      }
     } catch (e) {
       console.warn("[media/cache-check] skipped:", e);
     }
@@ -181,7 +221,9 @@ export async function POST(req: NextRequest) {
         detected_artifacts: result.detectedArtifacts,
         evidence_tags: result.evidenceTags,
         breakdown: result.breakdown,
-        metadata: { source: "c2pa_shortcircuit" },
+        metadata: { source: "c2pa_shortcircuit", user_id: usage.user?.id ?? null },
+        user_id: usage.user?.id ?? null,
+        ip_address: usage.ipAddress,
         created_at: result.timestamp,
       }).then(({ error }) => { if (error) console.warn("[media/db-insert c2pa]", error.message); });
 
@@ -218,6 +260,24 @@ export async function POST(req: NextRequest) {
         },
         timestamp: new Date().toISOString(),
       };
+
+      supabase.from("scans").insert({
+        id: fallbackResult.id,
+        content_hash: contentHash,
+        type: fallbackResult.type,
+        truth_score: fallbackResult.truthScore,
+        verdict: fallbackResult.label,
+        confidence_level: fallbackResult.confidenceLevel,
+        c2pa_verified: fallbackResult.c2paVerified,
+        detected_artifacts: fallbackResult.detectedArtifacts,
+        evidence_tags: fallbackResult.evidenceTags,
+        breakdown: fallbackResult.breakdown,
+        metadata: { source: "metadata_fallback", user_id: usage.user?.id ?? null },
+        user_id: usage.user?.id ?? null,
+        ip_address: usage.ipAddress,
+        created_at: fallbackResult.timestamp,
+      }).then(({ error }) => { if (error) console.warn("[media/db-insert fallback]", error.message); });
+
       return NextResponse.json(fallbackResult);
     }
 
@@ -261,7 +321,13 @@ export async function POST(req: NextRequest) {
       detected_artifacts: result.detectedArtifacts,
       evidence_tags: result.evidenceTags,
       breakdown: result.breakdown,
-      metadata: { sightengine_ai_score: aiScore, sightengine_deepfake: deepfakeScore },
+      metadata: {
+        sightengine_ai_score: aiScore,
+        sightengine_deepfake: deepfakeScore,
+        user_id: usage.user?.id ?? null,
+      },
+      user_id: usage.user?.id ?? null,
+      ip_address: usage.ipAddress,
       created_at: result.timestamp,
     }).then(({ error }) => { if (error) console.warn("[media/db-insert]", error.message); });
 

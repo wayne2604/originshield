@@ -5,6 +5,7 @@ import { dbRowToScanResult } from "@/lib/supabase/mappers";
 import { rateLimit } from "@/lib/rateLimit";
 import { checkUsageLimit } from "@/lib/services/usageService";
 import type { ScanResult, EvidenceTag, TruthLabel, ConfidenceLevel } from "@/types";
+import * as cheerio from "cheerio";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -88,26 +89,59 @@ export async function POST(req: NextRequest) {
     }
 
     const limited = rateLimit(req, {
-      keyPrefix: "verify:text",
-      limit: 12,
+      keyPrefix: "verify:url",
+      limit: 8,
       windowMs: 60_000,
     });
     if (limited) return limited;
 
-    console.log("[text] step 1: parsing request");
-    const { text } = await req.json();
+    const { url } = await req.json();
 
-    if (!text || typeof text !== "string" || text.trim().length < 20) {
+    if (!url || typeof url !== "string" || !url.startsWith("http")) {
       return NextResponse.json(
-        { error: "Text must be at least 20 characters." },
+        { error: "A valid HTTP/HTTPS URL is required." },
         { status: 400 }
       );
     }
 
-    const trimmed = text.trim();
-    console.log("[text] step 2: hashing content");
+    // 1. Fetch the URL content
+    let htmlContent = "";
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      htmlContent = await response.text();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json(
+        { error: `Failed to fetch URL content: ${msg}` },
+        { status: 400 }
+      );
+    }
+
+    // 2. Extract text using Cheerio
+    const $ = cheerio.load(htmlContent);
+    $("script, style, noscript, iframe, img, svg").remove();
+    const text = $("body").text().replace(/\s+/g, " ").trim();
+    
+    if (!text || text.length < 50) {
+      return NextResponse.json(
+        { error: "Could not extract enough text content from this URL." },
+        { status: 400 }
+      );
+    }
+
+    // Trim text to a reasonable limit for Sapling (e.g., 50k chars max)
+    const trimmed = text.slice(0, 50000);
+
     const contentHash = createHash("sha256").update(trimmed).digest("hex");
-    console.log("[text] step 3: creating supabase client");
     const supabase = createServerClient();
 
     // ── Cache check (non-fatal) ───────────────────────────────────────────
@@ -117,7 +151,7 @@ export async function POST(req: NextRequest) {
         .select("*")
         .eq("content_hash", contentHash)
         .maybeSingle();
-      if (cacheErr) console.warn("[text/cache-check]", cacheErr.message);
+      if (cacheErr) console.warn("[url/cache-check]", cacheErr.message);
       if (cached) {
         const cachedResult = dbRowToScanResult(cached);
         const timestamp = new Date().toISOString();
@@ -134,7 +168,7 @@ export async function POST(req: NextRequest) {
           detected_artifacts: cachedResult.detectedArtifacts,
           evidence_tags: cachedResult.evidenceTags,
           breakdown: cachedResult.breakdown,
-          metadata: { cached_from: cached.id, user_id: usage.user?.id ?? null },
+          metadata: { cached_from: cached.id, url, user_id: usage.user?.id ?? null },
           user_id: usage.user?.id ?? null,
           ip_address: usage.ipAddress,
           created_at: timestamp,
@@ -143,11 +177,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ...cachedResult, id, timestamp });
       }
     } catch (e) {
-      console.warn("[text/cache-check] skipped:", e);
+      console.warn("[url/cache-check] skipped:", e);
     }
 
     // ── Sapling AI call ───────────────────────────────────────────────────
-    console.log("[text] step 4: calling Sapling AI");
     const apiKey = process.env.SAPLING_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -163,7 +196,6 @@ export async function POST(req: NextRequest) {
     });
 
     const saplingRaw = await saplingRes.text();
-    console.log("[text] Sapling status:", saplingRes.status, "body:", saplingRaw.slice(0, 300));
 
     if (!saplingRes.ok) {
       return NextResponse.json(
@@ -173,10 +205,9 @@ export async function POST(req: NextRequest) {
     }
 
     const sapling = JSON.parse(saplingRaw);
-    console.log("[text] step 5: sapling score =", sapling.score);
     const aiScore: number = typeof sapling.score === "number" ? sapling.score : 0.5;
 
-    // Safely extract per-sentence scores — handle both [str, num] and {sentence, score} formats
+    // Safely extract per-sentence scores
     const rawSentences = Array.isArray(sapling.sentence_scores) ? sapling.sentence_scores : [];
     const sentenceScores: number[] = rawSentences.map((item: unknown) => {
       if (Array.isArray(item)) return typeof item[1] === "number" ? item[1] : aiScore;
@@ -191,21 +222,9 @@ export async function POST(req: NextRequest) {
     const label = deriveLabel(truthScore);
     const confidenceLevel = deriveConfidence(truthScore);
 
-    const burstiness =
-      sentenceScores.length > 1
-        ? parseFloat(
-            (
-              sentenceScores.reduce(
-                (sum, s) => sum + Math.pow(s - aiScore, 2),
-                0
-              ) / sentenceScores.length
-            ).toFixed(3)
-          )
-        : parseFloat((1 - aiScore).toFixed(3));
-
     const result: ScanResult = {
       id: crypto.randomUUID(),
-      type: "text",
+      type: "url", // Note: It is URL now
       truthScore,
       label,
       confidenceLevel,
@@ -213,10 +232,10 @@ export async function POST(req: NextRequest) {
       evidenceTags: buildEvidenceTags(aiScore, sentenceScores as number[]),
       c2paVerified: false,
       breakdown: {
-        burstiness,
-        perplexity: parseFloat(((1 - aiScore) * 80 + 10).toFixed(1)),
-        repetitionScore: parseFloat(aiScore.toFixed(3)),
         styleConsistency: parseFloat((0.3 + aiScore * 0.6).toFixed(3)),
+        repetitionScore: parseFloat(aiScore.toFixed(3)),
+        sentenceVariance: parseFloat(((1 - aiScore) * 80 + 10).toFixed(1)),
+        linkPatternScore: 0.5,
       },
       timestamp: new Date().toISOString(),
     };
@@ -234,20 +253,20 @@ export async function POST(req: NextRequest) {
         detected_artifacts: result.detectedArtifacts,
         evidence_tags: result.evidenceTags,
         breakdown: result.breakdown,
-        metadata: { sapling_raw_score: aiScore, user_id: usage.user?.id ?? null },
+        metadata: { sapling_raw_score: aiScore, url: url, user_id: usage.user?.id ?? null },
         user_id: usage.user?.id ?? null,
         ip_address: usage.ipAddress,
         created_at: result.timestamp,
       });
-      if (insertErr) console.warn("[text/db-insert]", insertErr.message);
+      if (insertErr) console.warn("[url/db-insert]", insertErr.message);
     } catch (e) {
-      console.warn("[text/db-insert] skipped:", e);
+      console.warn("[url/db-insert] skipped:", e);
     }
 
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[/api/verify/text] CRASH:", msg);
+    console.error("[/api/verify/url] CRASH:", msg);
     return NextResponse.json({ error: `Internal server error: ${msg}` }, { status: 500 });
   }
 }

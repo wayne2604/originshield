@@ -2,67 +2,42 @@
 // Routes detection requests to the appropriate secure API route.
 // Text  → /api/verify/text  (Sapling AI)
 // Image → /api/verify/media (metadata forensics → Sightengine)
-// URL   → mock (no free URL API yet; swap in Phase 3)
+// URL   → /api/verify/url   (page extraction → Sapling AI)
 
-import type { DetectionType, ScanResult, EvidenceTag } from "@/types";
+import type { DetectionType, ScanResult } from "@/types";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
-// ── URL mock (Phase 2 placeholder) ────────────────────────────────────────
+export class DetectionError extends Error {
+  code?: string;
 
-function rand(min: number, max: number, decimals = 2) {
-  return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "DetectionError";
+    this.code = code;
+  }
 }
 
-async function mockUrlScan(url: string): Promise<ScanResult> {
-  await new Promise((r) => setTimeout(r, 1500));
-  const aiProbability = rand(0.1, 0.9);
-  const truthScore = Math.round((1 - aiProbability) * 100);
-  const label =
-    truthScore >= 68 ? "human" : truthScore >= 38 ? "uncertain" : "ai";
-  const dist = Math.abs(truthScore - 50);
-  const confidenceLevel =
-    dist >= 30 ? "high" : dist >= 15 ? "medium" : "low";
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabaseBrowser.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
-  const evidenceTags: EvidenceTag[] =
-    aiProbability > 0.6
-      ? [
-          { label: "Formulaic Heading Structure", variant: "negative" },
-          { label: "High Style Consistency", variant: "negative" },
-          { label: "Keyword Stuffing Detected", variant: "negative" },
-        ]
-      : [
-          { label: "Organic Heading Variance", variant: "positive" },
-          { label: "Natural Reading Level Shift", variant: "positive" },
-          { label: "Embedded Opinion Markers", variant: "positive" },
-        ];
+// ── URL processing ────────────────────────────────────────────────────────
 
-  return {
-    id: crypto.randomUUID(),
-    type: "url",
-    truthScore,
-    label,
-    confidenceLevel,
-    detectedArtifacts:
-      aiProbability > 0.6
-        ? [
-            "Formulaic H2/H3 heading distribution",
-            "High stylistic consistency across all sections",
-            "Sentence length variance below human baseline",
-          ]
-        : [
-            "Organic heading structure with varied depth",
-            "Embedded personal opinion markers",
-            "Natural reading-level variance across paragraphs",
-          ],
-    evidenceTags,
-    c2paVerified: false,
-    breakdown: {
-      styleConsistency: rand(0.2, 0.99),
-      repetitionScore: rand(0.05, 0.8),
-      sentenceVariance: rand(0.15, 0.95),
-      linkPatternScore: rand(0.1, 0.9),
-    },
-    timestamp: new Date().toISOString(),
-  };
+async function processUrl(url: string): Promise<ScanResult> {
+  const res = await fetch("/api/verify/url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new DetectionError(err.error ?? "URL analysis failed", err.code);
+  }
+
+  return res.json();
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -74,13 +49,13 @@ export async function runDetection(
   if (type === "text") {
     const res = await fetch("/api/verify/text", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ text: content as string }),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Request failed" }));
-      throw new Error(err.error ?? "Text analysis failed");
+      throw new DetectionError(err.error ?? "Text analysis failed", err.code);
     }
 
     return res.json();
@@ -92,19 +67,20 @@ export async function runDetection(
 
     const res = await fetch("/api/verify/media", {
       method: "POST",
+      headers: await authHeaders(),
       body: formData,
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Request failed" }));
-      throw new Error(err.error ?? "Image analysis failed");
+      throw new DetectionError(err.error ?? "Image analysis failed", err.code);
     }
 
     return res.json();
   }
 
   if (type === "url") {
-    return mockUrlScan(content as string);
+    return processUrl(content as string);
   }
 
   throw new Error(`Unsupported detection type: ${type}`);

@@ -17,10 +17,11 @@ import {
   X,
   ScanLine,
 } from "lucide-react";
-import { runDetection } from "@/lib/services/detectionService";
+import { DetectionError, runDetection } from "@/lib/services/detectionService";
 import type { DetectionType, ScanStatus, ScanResult } from "@/types";
 import { INPUT_LIMITS } from "@/constants";
 import ResultView from "./ResultView";
+import UsageLimitModal from "./UsageLimitModal";
 
 // ── Tab config ─────────────────────────────────────────────────────────────
 
@@ -102,6 +103,7 @@ export default function ScannerHub() {
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // Input state
   const [activeTab, setActiveTab] = useState<DetectionType>("text");
@@ -164,6 +166,7 @@ export default function ScannerHub() {
     if (!canSubmit) return;
     setStatus("loading");
     setError(null);
+    setShowPaywall(false);
 
     try {
       const content =
@@ -177,6 +180,12 @@ export default function ScannerHub() {
       setScanResult(result);
       setStatus("success");
     } catch (err) {
+      if (err instanceof DetectionError && err.code === "LIMIT_REACHED") {
+        setStatus("idle");
+        setShowPaywall(true);
+        return;
+      }
+
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setStatus("error");
     }
@@ -186,6 +195,7 @@ export default function ScannerHub() {
     setStatus("idle");
     setScanResult(null);
     setError(null);
+    setShowPaywall(false);
   }, []);
 
   // ── Success view ───────────────────────────────────────────────────────
@@ -193,6 +203,7 @@ export default function ScannerHub() {
   if (status === "success" && scanResult) {
     return (
       <section id="input-hub" className="relative z-10 py-16 sm:py-20 px-4">
+        {showPaywall && <UsageLimitModal onClose={() => setShowPaywall(false)} />}
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-8">
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">
@@ -212,6 +223,7 @@ export default function ScannerHub() {
 
   return (
     <section id="input-hub" className="relative z-10 py-16 sm:py-20 px-4">
+      {showPaywall && <UsageLimitModal onClose={() => setShowPaywall(false)} />}
       <div className="max-w-3xl mx-auto">
         {/* Section label */}
         <div className="text-center mb-8">

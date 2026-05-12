@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Providers from "./providers";
 import "./globals.css";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://originshield.app";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -14,6 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "OriginShield — AI Content Detection Platform",
   description:
     "Detect AI-generated text, images, and web content with cutting-edge deep learning models. Protect trust and authenticity at scale.",
@@ -22,6 +25,11 @@ export const metadata: Metadata = {
     title: "OriginShield — AI Content Detection",
     description: "Verify what's authentically human. Analyze text, images, and links for AI-generated content.",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OriginShield - AI Content Detection",
+    description: "Verify what's authentically human. Analyze text, images, and links for AI-generated content.",
   },
 };
 

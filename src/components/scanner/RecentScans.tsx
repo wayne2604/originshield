@@ -28,7 +28,45 @@ export default function RecentScans() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading || scans.length === 0) return null;
+  if (loading) {
+    return (
+      <section className="relative z-10 pb-12 px-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <History size={14} className="text-slate-600" />
+              <div className="h-3 w-28 rounded bg-slate-800/50 animate-pulse" />
+            </div>
+
+            <ul className="space-y-2">
+              {[0, 1, 2].map((item) => (
+                <li
+                  key={item}
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg"
+                  style={{
+                    background: "rgba(2,6,23,0.4)",
+                    border: "1px solid rgba(0,240,255,0.06)",
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="shrink-0 w-6 h-6 rounded-md bg-slate-800/60 animate-pulse" />
+                    <div className="shrink-0 w-1.5 h-1.5 rounded-full bg-slate-800/60 animate-pulse" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3 w-36 rounded bg-slate-800/60 animate-pulse" />
+                      <div className="h-2.5 w-24 rounded bg-slate-800/50 animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="shrink-0 w-3 h-3 rounded bg-slate-800/50 animate-pulse" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (scans.length === 0) return null;
 
   return (
     <section className="relative z-10 pb-12 px-4">

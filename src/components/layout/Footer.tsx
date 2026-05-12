@@ -1,4 +1,5 @@
 import { Shield, Heart } from "lucide-react";
+import Link from "next/link";
 
 export default function Footer() {
   return (
@@ -31,9 +32,10 @@ export default function Footer() {
 
           {/* Links */}
           <div className="flex items-center gap-6 text-sm text-slate-500">
-            <a href="#" className="hover:text-[#00f0ff] transition-colors">Privacy</a>
-            <a href="#" className="hover:text-[#00f0ff] transition-colors">Terms</a>
-            <a href="#" className="hover:text-[#00f0ff] transition-colors">API Docs</a>
+            <Link href="/privacy" className="hover:text-[#00f0ff] transition-colors">Privacy</Link>
+            <Link href="/terms" className="hover:text-[#00f0ff] transition-colors">Terms</Link>
+            <Link href="/api-docs" className="hover:text-[#00f0ff] transition-colors">API Docs</Link>
+            <Link href="/auth" className="hover:text-[#00f0ff] transition-colors">Login</Link>
           </div>
 
           {/* Copyright */}
