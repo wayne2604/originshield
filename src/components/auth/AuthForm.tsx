@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, LogIn, Mail, UserPlus } from "lucide-react";
 import { setRememberMePreference, supabaseBrowser } from "@/lib/supabase/client";
@@ -45,12 +45,28 @@ function FacebookLogo() {
 
 export default function AuthForm() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "update_password">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("update_password");
+      }
+      if (event === "SIGNED_IN") {
+        router.push("/profile");
+        router.refresh();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   async function submit() {
     setLoading(true);
@@ -76,6 +92,28 @@ export default function AuthForm() {
 
     router.push("/profile");
     router.refresh();
+  }
+
+  async function handleUpdatePassword() {
+    setLoading(true);
+    setMessage(null);
+
+    const { error } = await supabaseBrowser.auth.updateUser({
+      password: password,
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Password updated successfully! Redirecting...");
+    setTimeout(() => {
+      router.push("/profile");
+      router.refresh();
+    }, 2000);
   }
 
   async function sendPasswordReset() {
@@ -104,7 +142,8 @@ export default function AuthForm() {
     const { error } = await supabaseBrowser.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/profile`,
+        redirectTo: `${window.location.origin}/auth`,
+        skipBrowserRedirect: false,
       },
     });
 
@@ -128,34 +167,38 @@ export default function AuthForm() {
         </p>
       </div>
 
-      <div className="flex gap-2 mb-5">
-        {(["login", "signup"] as const).map((item) => (
-          <button
-            key={item}
-            onClick={() => setMode(item)}
-            className={`tab-toggle flex-1 justify-center ${mode === item ? "active" : ""}`}
-          >
-            {item === "login" ? <LogIn size={15} /> : <UserPlus size={15} />}
-            <span>{item === "login" ? "Login" : "Sign up"}</span>
-          </button>
-        ))}
-      </div>
+      {mode !== "update_password" && (
+        <div className="flex gap-2 mb-5">
+          {(["login", "signup"] as const).map((item) => (
+            <button
+              key={item}
+              onClick={() => setMode(item)}
+              className={`tab-toggle flex-1 justify-center ${mode === item ? "active" : ""}`}
+            >
+              {item === "login" ? <LogIn size={15} /> : <UserPlus size={15} />}
+              <span>{item === "login" ? "Login" : "Sign up"}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="space-y-4">
-        <div className="relative">
-          <Mail
-            size={16}
-            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600"
-          />
-          <input
-            className="input-cyber !pl-10"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-          />
-        </div>
+        {mode !== "update_password" && (
+          <div className="relative">
+            <Mail
+              size={16}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600"
+            />
+            <input
+              className="input-cyber !pl-10"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </div>
+        )}
         <div className="relative">
           <KeyRound
             size={16}
@@ -166,7 +209,7 @@ export default function AuthForm() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder={mode === "update_password" ? "Enter new password" : "Password"}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
         </div>
@@ -231,15 +274,29 @@ export default function AuthForm() {
 
       <button
         className="btn-neon mt-6 w-full"
-        onClick={submit}
-        disabled={loading || !email || password.length < 6}
+        onClick={mode === "update_password" ? handleUpdatePassword : submit}
+        disabled={loading || (mode !== "update_password" && !email) || password.length < 6}
         style={{
-          opacity: loading || !email || password.length < 6 ? 0.45 : 1,
-          cursor: loading || !email || password.length < 6 ? "not-allowed" : "pointer",
+          opacity: loading || (mode !== "update_password" && !email) || password.length < 6 ? 0.45 : 1,
+          cursor: loading || (mode !== "update_password" && !email) || password.length < 6 ? "not-allowed" : "pointer",
         }}
       >
-        {mode === "login" ? <LogIn size={16} /> : <UserPlus size={16} />}
-        <span>{loading ? "Working..." : mode === "login" ? "Log in" : "Sign up"}</span>
+        {mode === "login" ? (
+          <LogIn size={16} />
+        ) : mode === "signup" ? (
+          <UserPlus size={16} />
+        ) : (
+          <KeyRound size={16} />
+        )}
+        <span>
+          {loading
+            ? "Working..."
+            : mode === "login"
+              ? "Log in"
+              : mode === "signup"
+                ? "Sign up"
+                : "Update Password"}
+        </span>
       </button>
     </div>
   );

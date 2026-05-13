@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ExternalLink, LogOut, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, LogOut, ShieldCheck } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import type { ScanResult } from "@/types";
@@ -21,24 +21,56 @@ export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      const { data } = await supabaseBrowser.auth.getSession();
-      if (!data.session) {
-        router.replace("/auth");
-        return;
+    // 1. Initial check
+    supabaseBrowser.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (initialSession) {
+        setSession(initialSession);
+        loadScans(initialSession.access_token);
+      } else {
+        // If no session, we don't immediately redirect. 
+        // We wait for onAuthStateChange in case of OAuth redirect processing.
+        setLoading(false);
       }
+    });
 
-      setSession(data.session);
+    // 2. Listen for changes (OAuth return, etc.)
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange((event, currentSession) => {
+      if (currentSession) {
+        setSession(currentSession);
+        loadScans(currentSession.access_token);
+      } else if (event === "SIGNED_OUT") {
+        router.replace("/auth");
+      }
+    });
+
+    // 3. Safety timeout: If still no session after 2 seconds, redirect to auth
+    const timeout = setTimeout(async () => {
+      const { data: { session: finalCheck } } = await supabaseBrowser.auth.getSession();
+      if (!finalCheck) {
+        router.replace("/auth");
+      }
+    }, 2000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [router]);
+
+  async function loadScans(token: string) {
+    setLoading(true);
+    try {
       const res = await fetch("/api/me/scans", {
-        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
       setScans(json.scans ?? []);
+    } catch (err) {
+      console.error("Failed to load scans:", err);
+    } finally {
       setLoading(false);
     }
-
-    load();
-  }, [router]);
+  }
 
   async function signOut() {
     await supabaseBrowser.auth.signOut();
@@ -46,13 +78,25 @@ export default function ProfileClient() {
     router.refresh();
   }
 
+  if (!session && loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#00f0ff] border-t-transparent"></div>
+      </div>
+    );
+  }
+
   return (
     <main className="relative z-10 flex-1 px-4 py-24">
       <div className="max-w-5xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
           <div>
-            <Link href="/" className="text-sm text-[#00f0ff] hover:text-white">
-              Back to scanner
+            <Link 
+              href="/" 
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-cyan-500/20 bg-slate-950/50 text-[#00f0ff] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/10"
+              aria-label="Back to scanner"
+            >
+              <ArrowLeft size={20} />
             </Link>
             <h1 className="text-4xl font-bold text-white mt-5">Profile</h1>
             <p className="text-sm text-slate-400 mt-2">
@@ -73,7 +117,7 @@ export default function ProfileClient() {
             </h2>
           </div>
 
-          {loading ? (
+          {loading && scans.length === 0 ? (
             <p className="text-sm text-slate-500">Loading scan history...</p>
           ) : scans.length === 0 ? (
             <p className="text-sm text-slate-500">
@@ -93,7 +137,7 @@ export default function ProfileClient() {
                       <span className="font-mono text-xs uppercase text-slate-500">
                         {scan.type}
                       </span>
-                      <span className="text-sm font-semibold" style={{ color: LABEL_COLOR[scan.label] }}>
+                      <span className="text-sm font-semibold" style={{ color: LABEL_COLOR[scan.label as keyof typeof LABEL_COLOR] || "#94a3b8" }}>
                         {scan.label} · {scan.truthScore}/100
                       </span>
                     </div>
