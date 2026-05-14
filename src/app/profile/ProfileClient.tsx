@@ -74,6 +74,7 @@ export default function ProfileClient() {
 
   async function signOut() {
     await supabaseBrowser.auth.signOut();
+    document.cookie = "sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     router.replace("/");
     router.refresh();
   }

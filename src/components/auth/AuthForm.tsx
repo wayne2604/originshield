@@ -90,6 +90,10 @@ export default function AuthForm() {
       return;
     }
 
+    if (auth.data.session) {
+      document.cookie = `sb-access-token=${auth.data.session.access_token}; path=/; max-age=${auth.data.session.expires_in}; SameSite=Lax; Secure`;
+    }
+
     router.push("/profile");
     router.refresh();
   }
