@@ -5,17 +5,37 @@ import Link from "next/link";
 import { User, LayoutDashboard } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { ADMIN_EMAILS } from "@/config/admin";
 
 export default function AuthNav() {
   const [session, setSession] = useState<Session | null>(null);
-  const isAdmin = session?.user?.email && ADMIN_EMAILS.includes(session.user.email);
+  const [role, setRole] = useState<string | null>(null);
+  const isAdmin = role === 'admin' || role === 'superadmin';
 
   useEffect(() => {
-    supabaseBrowser.auth.getSession().then(({ data }) => setSession(data.session));
+    supabaseBrowser.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session?.user) {
+        fetchRole(data.session.user.id);
+      }
+    });
+
     const { data } = supabaseBrowser.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      if (nextSession?.user) {
+        fetchRole(nextSession.user.id);
+      } else {
+        setRole(null);
+      }
     });
+
+    async function fetchRole(userId: string) {
+      const { data } = await supabaseBrowser
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      setRole(data?.role || 'user');
+    }
 
     return () => data.subscription.unsubscribe();
   }, []);

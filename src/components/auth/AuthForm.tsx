@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 import { KeyRound, LogIn, Mail, UserPlus } from "lucide-react";
 import { setRememberMePreference, supabaseBrowser } from "@/lib/supabase/client";
 
+async function getRedirectPath(userId: string): Promise<string> {
+  const { data } = await supabaseBrowser
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .single();
+  return data?.role === 'admin' || data?.role === 'superadmin' ? '/admin' : '/profile';
+}
+
 function GoogleLogo() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
@@ -53,12 +62,13 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange(async (event, session) => {
       if (event === "PASSWORD_RECOVERY") {
         setMode("update_password");
       }
-      if (event === "SIGNED_IN") {
-        router.push("/profile");
+      if (event === "SIGNED_IN" && session?.user) {
+        const path = await getRedirectPath(session.user.id);
+        router.push(path);
         router.refresh();
       }
     });
@@ -92,6 +102,10 @@ export default function AuthForm() {
 
     if (auth.data.session) {
       document.cookie = `sb-access-token=${auth.data.session.access_token}; path=/; max-age=${auth.data.session.expires_in}; SameSite=Lax; Secure`;
+      const path = await getRedirectPath(auth.data.session.user.id);
+      router.push(path);
+      router.refresh();
+      return;
     }
 
     router.push("/profile");

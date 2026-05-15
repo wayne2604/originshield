@@ -1,22 +1,18 @@
 "use server";
 
 import { createServerClient } from "@/lib/supabase/server";
-import { ADMIN_EMAILS } from "@/config/admin";
 import { dbRowToScanResult } from "@/lib/supabase/mappers";
 import type { DetectionType } from "@/types";
 import { cookies } from "next/headers";
 
 /**
  * Internal helper to verify if the current requester is an admin.
- * Note: This relies on cookie-based auth which must be synced from client.
+ * Uses database-driven RBAC via the 'profiles' table.
  */
 async function verifyAdmin() {
   const supabase = createServerClient();
   const cookieStore = await cookies();
   
-  // Try to get session from cookies (sb-access-token is standard for some Supabase setups)
-  // Or if using @supabase/ssr, it might be different.
-  // Since we don't have @supabase/ssr, we assume the middleware or a manual sync handles this.
   const token = cookieStore.get("sb-access-token")?.value;
   
   if (!token) throw new Error("Unauthorized: No session found.");
@@ -24,7 +20,15 @@ async function verifyAdmin() {
   const { data: { user }, error } = await supabase.auth.getUser(token);
   
   if (error || !user) throw new Error("Unauthorized: Invalid session.");
-  if (!ADMIN_EMAILS.includes(user.email || "")) {
+
+  // Check role in the database
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
     throw new Error("Forbidden: Admin access only.");
   }
 

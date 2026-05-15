@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
-import { ADMIN_EMAILS } from "@/config/admin";
 
 export default async function AdminLayout({
   children,
@@ -18,7 +17,18 @@ export default async function AdminLayout({
   const supabase = createServerClient();
   const { data: { user }, error } = await supabase.auth.getUser(token);
 
-  if (error || !user || !ADMIN_EMAILS.includes(user.email || "")) {
+  if (error || !user) {
+    redirect("/");
+  }
+
+  // Check role in the database
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
     redirect("/");
   }
 
