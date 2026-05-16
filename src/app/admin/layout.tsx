@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
+import { SidebarProvider } from "@/context/SidebarContext";
+import LayoutContent from "./LayoutContent";
 
 export default async function AdminLayout({
   children,
@@ -33,13 +35,8 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
-      {/* Sidebar could go here */}
-      <main className="flex-1 overflow-auto">
-        <div className="container mx-auto p-6 lg:p-10">
-          {children}
-        </div>
-      </main>
-    </div>
+    <SidebarProvider>
+      <LayoutContent>{children}</LayoutContent>
+    </SidebarProvider>
   );
 }
