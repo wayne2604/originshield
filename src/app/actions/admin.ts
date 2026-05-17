@@ -9,17 +9,36 @@ async function verifyAdmin() {
   const supabase = createServerClient();
   const cookieStore = await cookies();
   const token = cookieStore.get("sb-access-token")?.value;
-  if (!token) throw new Error("Unauthorized: No session found.");
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) throw new Error("Unauthorized: Invalid session.");
-  const { data: profile } = await supabase
+  
+  if (!token) {
+    console.error("verifyAdmin: Missing 'sb-access-token' cookie. Access denied.");
+    throw new Error("Unauthorized: No session found. Please log in again.");
+  }
+
+  // Use the service client to verify the user's JWT token
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error("verifyAdmin: Token verification failed", authError?.message);
+    throw new Error("Unauthorized: Invalid session. Please log in again.");
+  }
+
+  // Check the 'profiles' table for the admin role
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single();
-  if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
+
+  if (profileError || !profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
+    console.error("verifyAdmin: Insufficient permissions", { 
+      userId: user.id, 
+      role: profile?.role, 
+      error: profileError?.message 
+    });
     throw new Error("Forbidden: Admin access only.");
   }
+  
   return user;
 }
 
@@ -184,17 +203,43 @@ export async function getAllScans(limit = 50) {
  * Fetches all users with profiles from the database for the admin users page.
  */
 export async function getAllUsers() {
-  await verifyAdmin();
-  const supabase = createServerClient();
-
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, role, created_at, updated_at")
-    .order("created_at", { ascending: false });
-
-  if (!profiles || profiles.length === 0) {
+  try {
+    await verifyAdmin();
+  } catch (error) {
+    console.error("getAllUsers: Permission check failed", error);
     return [];
   }
+  
+  const supabase = createServerClient();
+
+  console.log("Fetching profiles from 'profiles' table...");
+  // Use * to get all available columns to avoid "column does not exist" errors
+  let { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("*");
+
+  // Fallback: Check if the table is named 'profile' instead of 'profiles'
+  if (profilesError && (profilesError.code === '42P01' || profilesError.message?.includes('not found'))) {
+    console.log("Table 'profiles' not found, trying 'profile'...");
+    const { data: altData, error: altError } = await supabase
+      .from("profile")
+      .select("*");
+    
+    profiles = altData;
+    profilesError = altError;
+  }
+
+  if (profilesError) {
+    console.error("Error fetching profiles (Full Details):", JSON.stringify(profilesError, null, 2));
+    return [];
+  }
+
+  if (!profiles || profiles.length === 0) {
+    console.log("No profiles found in the 'profiles' table.");
+    return [];
+  }
+
+  console.log(`Successfully fetched ${profiles.length} profiles.`);
 
   // Get scan counts in bulk
   const { data: scanData } = await supabase
@@ -212,23 +257,31 @@ export async function getAllUsers() {
   // Try to get user emails from auth admin API
   let emailMap: Record<string, { email: string; lastSignIn: string | null }> = {};
   try {
-    const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
-    authUsers?.forEach((u) => {
-      emailMap[u.id] = {
-        email: u.email || "Unknown",
-        lastSignIn: u.last_sign_in_at || null,
-      };
-    });
-  } catch {
-    console.warn("auth.admin.listUsers not available");
+    console.log("Fetching auth users via Admin API...");
+    const { data: { users: authUsers }, error: adminError } = await supabase.auth.admin.listUsers();
+    
+    if (adminError) {
+      console.warn("auth.admin.listUsers error:", adminError.message);
+    } else {
+      console.log(`Found ${authUsers?.length || 0} auth users.`);
+      authUsers?.forEach((u) => {
+        emailMap[u.id] = {
+          email: u.email || "Unknown",
+          lastSignIn: u.last_sign_in_at || null,
+        };
+      });
+    }
+  } catch (err) {
+    console.warn("auth.admin.listUsers catch error:", err);
   }
 
-  return profiles.map((profile) => ({
+  return profiles.map((profile: any) => ({
     id: profile.id,
     email: emailMap[profile.id]?.email || profile.id.slice(0, 8) + "...",
     role: profile.role || "user",
     scanCount: scanCounts[profile.id] || 0,
-    joinedAt: profile.created_at,
+    // Safely handle missing dates
+    joinedAt: profile.created_at || new Date().toISOString(),
     lastSignIn: emailMap[profile.id]?.lastSignIn || null,
   }));
 }

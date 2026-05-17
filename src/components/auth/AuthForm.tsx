@@ -66,6 +66,12 @@ export default function AuthForm() {
       if (event === "PASSWORD_RECOVERY") {
         setMode("update_password");
       }
+      
+      if (session) {
+        // Ensure cookie is set for all login types (Password, OAuth, etc.)
+        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${session.expires_in}; SameSite=Lax; Secure`;
+      }
+
       if (event === "SIGNED_IN" && session?.user) {
         const path = await getRedirectPath(session.user.id);
         router.push(path);

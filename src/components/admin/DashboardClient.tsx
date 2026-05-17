@@ -51,6 +51,50 @@ export default function DashboardClient({ stats, recentScans, distribution, dail
     return `${prefix}${value}%`;
   };
 
+  // ─── IMPLEMENTATION: EXPORT DATA (CSV) ───
+  const handleExportCSV = () => {
+    if (recentScans.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+
+    // Define CSV Headers
+    const headers = ["ID", "Type", "Label", "Truth Score", "Timestamp"];
+    
+    // Map data to rows
+    const rows = recentScans.map(scan => [
+      scan.id,
+      scan.type,
+      scan.label,
+      scan.truthScore,
+      new Date(scan.timestamp).toISOString()
+    ]);
+
+    // Combine into CSV string
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\n");
+
+    // Create a Blob and trigger download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const date = new Date().toISOString().split('T')[0];
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", `originshield-export-${date}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ─── IMPLEMENTATION: NEW REPORT (PRINT TO PDF) ───
+  const handleNewReport = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}
@@ -63,11 +107,17 @@ export default function DashboardClient({ stats, recentScans, distribution, dail
           <p className="text-gray-500 mt-1 font-medium italic">Empowering system integrity with real-time intelligence.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-800 text-gray-300 font-semibold text-sm hover:bg-white/5 transition-all">
+          <button 
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-800 text-gray-300 font-semibold text-sm hover:bg-white/5 transition-all"
+          >
             <Download className="h-4 w-4" />
             Export Data
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#A855F7] text-white font-semibold text-sm hover:bg-[#9333EA] transition-all shadow-lg shadow-purple-500/20">
+          <button 
+            onClick={handleNewReport}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#A855F7] text-white font-semibold text-sm hover:bg-[#9333EA] transition-all shadow-lg shadow-purple-500/20"
+          >
             <Plus className="h-4 w-4" />
             New Report
           </button>
@@ -131,7 +181,7 @@ export default function DashboardClient({ stats, recentScans, distribution, dail
           </div>
           <div className="h-[350px] w-full">
             {dailyActivity.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={dailyActivity}>
                   <defs>
                     <linearGradient id="colorScans" x1="0" y1="0" x2="0" y2="1">
@@ -172,7 +222,7 @@ export default function DashboardClient({ stats, recentScans, distribution, dail
             </h3>
             <div className="flex-1 w-full min-h-[120px]">
               {stats.totalScans > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={distributionData} layout="vertical">
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" stroke="#4b5563" fontSize={10} axisLine={false} tickLine={false} width={40} />

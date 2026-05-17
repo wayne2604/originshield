@@ -6,16 +6,109 @@ import {
   LayoutDashboard, FileSearch, Users, Settings, LogOut, 
   Shield, SidebarClose, SidebarOpen
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
+
+// ─── Nav item renderer (shared between sections) ───
+function NavItem({ 
+  item, 
+  isActive, 
+  isCollapsed 
+}: { 
+  item: { name: string; href: string; icon: React.ElementType }; 
+  isActive: boolean; 
+  isCollapsed: boolean; 
+}) {
+  return (
+    <div className="relative group/nav">
+      <Link
+        href={item.href}
+        className={`relative flex items-center rounded-xl transition-all duration-200 ${
+          isCollapsed 
+            ? "justify-center w-12 h-12 mx-auto" 
+            : "gap-3 px-3.5 h-12"
+        } ${
+          isActive
+            ? "bg-[#252540] text-white shadow-lg shadow-black/20"
+            : "text-gray-500 hover:text-gray-200 hover:bg-[#1c1c2e]"
+        }`}
+      >
+        {/* Left accent bar for active items */}
+        {isActive && (
+          <div 
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full transition-all duration-300"
+            style={{ 
+              background: "linear-gradient(180deg, #00f0ff, #a855f7)",
+              boxShadow: "0 0 8px rgba(0, 240, 255, 0.5)"
+            }}
+          />
+        )}
+
+        <item.icon 
+          className={`shrink-0 transition-all duration-300 ${
+            isActive ? "text-[#00f0ff] scale-110" : "group-hover/nav:scale-110"
+          }`}
+          size={20}
+          strokeWidth={1.8}
+        />
+
+        <div className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${
+          isCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-1"
+        }`}>
+          <span className="text-[14px] font-semibold tracking-wide">
+            {item.name}
+          </span>
+        </div>
+      </Link>
+
+      {/* Tooltip on hover when collapsed */}
+      {isCollapsed && (
+        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-2 rounded-lg text-xs font-bold text-white whitespace-nowrap opacity-0 translate-x-[-10px] group-hover/nav:opacity-100 group-hover/nav:translate-x-0 pointer-events-none transition-all duration-200 z-[70] shadow-2xl border border-[#2a2a3d]"
+          style={{ background: "#252540" }}
+        >
+          {item.name}
+          <div 
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[5px] w-2.5 h-2.5 rotate-45"
+            style={{ background: "#252540", borderLeft: "1px solid #2a2a3d", borderBottom: "1px solid #2a2a3d" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Section label component ───
+function SectionLabel({ label, isCollapsed }: { label: string; isCollapsed: boolean }) {
+  if (isCollapsed) {
+    return <div className="mx-auto my-2 w-6 border-t border-[#1e1e30]" />;
+  }
+  return (
+    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] px-3.5 pt-4 pb-2 select-none">
+      {label}
+    </p>
+  );
+}
 
 export default function AdminSidebar() {
   const pathname = usePathname();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
   const { isCollapsed, toggleSidebar } = useSidebar();
+
+  // ─── Keyboard shortcut: Ctrl+B to toggle sidebar ───
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+      e.preventDefault();
+      toggleSidebar();
+    }
+  }, [toggleSidebar]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -30,10 +123,14 @@ export default function AdminSidebar() {
     }
   };
 
-  const navItems = [
+  // ─── Grouped navigation sections (like Nolito's NAVIGATION / APP pattern) ───
+  const navigationItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { name: "Scans", href: "/admin/scans", icon: FileSearch },
     { name: "Users", href: "/admin/users", icon: Users },
+  ];
+
+  const systemItems = [
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ];
 
@@ -68,87 +165,59 @@ export default function AdminSidebar() {
           </div>
         </Link>
 
-        {/* Toggle Button - STAYS AT TOP IN BOTH STATES */}
-        <button
-          onClick={toggleSidebar}
-          className={`flex items-center justify-center w-8 h-8 rounded-lg bg-[#1c1c2e] border border-[#2a2a3d] text-gray-500 hover:text-white hover:border-gray-600 transition-all duration-200 shrink-0 ${
-            isCollapsed ? "absolute -right-4 top-5 translate-x-0 bg-[#252540] border-[#3a3a5a] text-white shadow-xl z-50 hover:scale-110" : ""
-          }`}
-        >
-          {isCollapsed ? (
-            <SidebarOpen size={14} strokeWidth={2} />
-          ) : (
+        {/* Toggle Button — stays inside sidebar boundary (Nolito-style) */}
+        {!isCollapsed && (
+          <button
+            onClick={toggleSidebar}
+            title="Collapse sidebar (Ctrl+B)"
+            className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#1c1c2e] border border-[#2a2a3d] text-gray-500 hover:text-white hover:border-gray-600 transition-all duration-200 shrink-0"
+          >
             <SidebarClose size={14} strokeWidth={2} />
-          )}
-        </button>
+          </button>
+        )}
       </div>
 
-      {/* ─── Navigation ─── */}
-      <nav className={`flex-1 overflow-y-auto py-6 transition-all duration-300 ${
+      {/* ─── Collapsed-only toggle (inside sidebar, below logo) ─── */}
+      {isCollapsed && (
+        <div className="flex justify-center pt-1 pb-2">
+          <button
+            onClick={toggleSidebar}
+            title="Expand sidebar (Ctrl+B)"
+            className="flex items-center justify-center w-10 h-10 rounded-lg bg-[#1c1c2e] border border-[#2a2a3d] text-gray-500 hover:text-white hover:border-gray-600 transition-all duration-200"
+          >
+            <SidebarOpen size={16} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Navigation (grouped sections) ─── */}
+      <nav className={`flex-1 overflow-y-auto py-2 transition-all duration-300 ${
         isCollapsed ? "px-2.5" : "px-3"
       }`}>
-        <div className="space-y-2">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <div key={item.name} className="relative group/nav">
-                <Link
-                  href={item.href}
-                  className={`relative flex items-center rounded-xl transition-all duration-200 ${
-                    isCollapsed 
-                      ? "justify-center w-12 h-12 mx-auto" 
-                      : "gap-3 px-3.5 h-12"
-                  } ${
-                    isActive
-                      ? "bg-[#252540] text-white shadow-lg shadow-black/20"
-                      : "text-gray-500 hover:text-gray-200 hover:bg-[#1c1c2e]"
-                  }`}
-                >
-                  {/* Left accent bar for active items */}
-                  {isActive && (
-                    <div 
-                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full transition-all duration-300 ${
-                        isCollapsed ? "opacity-100" : "opacity-100"
-                      }`}
-                      style={{ 
-                        background: "linear-gradient(180deg, #00f0ff, #a855f7)",
-                        boxShadow: "0 0 8px rgba(0, 240, 255, 0.5)"
-                      }}
-                    />
-                  )}
+        {/* NAVIGATION section */}
+        <SectionLabel label="Navigation" isCollapsed={isCollapsed} />
+        <div className="space-y-1">
+          {navigationItems.map((item) => (
+            <NavItem
+              key={item.name}
+              item={item}
+              isActive={pathname === item.href}
+              isCollapsed={isCollapsed}
+            />
+          ))}
+        </div>
 
-                  <item.icon 
-                    className={`shrink-0 transition-all duration-300 ${
-                      isActive ? "text-[#00f0ff] scale-110" : "group-hover/nav:scale-110"
-                    }`}
-                    size={20}
-                    strokeWidth={1.8}
-                  />
-
-                  <div className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${
-                    isCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-1"
-                  }`}>
-                    <span className="text-[14px] font-semibold tracking-wide">
-                      {item.name}
-                    </span>
-                  </div>
-                </Link>
-
-                {/* Tooltip on hover when collapsed */}
-                {isCollapsed && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-2 rounded-lg text-xs font-bold text-white whitespace-nowrap opacity-0 translate-x-[-10px] group-hover/nav:opacity-100 group-hover/nav:translate-x-0 pointer-events-none transition-all duration-200 z-[70] shadow-2xl border border-[#2a2a3d]"
-                    style={{ background: "#252540" }}
-                  >
-                    {item.name}
-                    <div 
-                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[5px] w-2.5 h-2.5 rotate-45"
-                      style={{ background: "#252540", borderLeft: "1px solid #2a2a3d", borderBottom: "1px solid #2a2a3d" }}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        {/* SYSTEM section */}
+        <SectionLabel label="System" isCollapsed={isCollapsed} />
+        <div className="space-y-1">
+          {systemItems.map((item) => (
+            <NavItem
+              key={item.name}
+              item={item}
+              isActive={pathname === item.href}
+              isCollapsed={isCollapsed}
+            />
+          ))}
         </div>
       </nav>
 
