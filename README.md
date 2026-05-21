@@ -1,78 +1,100 @@
-# OriginShield
+<div align="center">
+  <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&size=32&pause=1000&color=F7F7F7&center=true&vCenter=true&width=900&lines=🛡️+OriginShield+—+AI+Content+Detection+Platform" alt="Title" />
+</div>
 
-OriginShield is an AI content detection platform built with Next.js, Tailwind CSS, and Supabase. It verifies text, images, and URLs through first-party API routes so provider credentials stay on the server.
+A powerful AI content detection platform built with Next.js and Supabase. It enables users to verify the authenticity of text, images, and web content through cutting-edge deep learning models.
 
-## Stack
+---
 
-- Next.js App Router
+### 📦 Stack
+- Next.js 16 (App Router)
 - React 19
 - Tailwind CSS 4
-- Supabase Auth and database storage
-- Sapling AI for text and URL content detection
-- Sightengine for image AI/deepfake checks
+- Supabase (Auth & Database)
+- Stripe (Payments)
+- Sapling AI (Text & URL Detection)
+- Sightengine (Image/Deepfake Analysis)
 
-## Setup
+---
 
-Install dependencies and start the app:
-
+### ✨ Quick start
 ```bash
+# Clone the repository
+git clone https://github.com/wayne2604/originshield.git
+
+# Navigate to the directory
+cd originshield
+
+# Install dependencies
 npm install
+
+# Copy the example config and add your credentials
+cp .env.example .env.local
+
+# Start the development server
 npm run dev
 ```
+Ensure you have Node.js 18+ installed and a Supabase project with the required schema to get started.
 
-Create `.env.local` from `.env.example`:
+---
 
-```bash
-SAPLING_API_KEY=
-SIGHTENGINE_API_USER=
-SIGHTENGINE_API_SECRET=
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+### ⚙️ Features
+- **Multi-Format Scanning** — Analyze text, images, and URLs for AI-generated content.
+- **Secure Auth** — Login and registration via Supabase with Google & Facebook OAuth.
+- **Freemium Model** — 3 free guest scans with IP-based tracking, then upgrade via Stripe.
+- **Admin Dashboard** — System-wide oversight and user management for administrators.
+- **Scan History** — Authenticated users can view and revisit past scan results.
+- **Password Recovery** — Secure reset flow powered by Supabase email templates.
+
+---
+
+### 🛠️ How it works
+The system follows a modular Next.js App Router architecture designed for security and scalability:
+- **Server-Side API Routes**: All detection calls go through `/api/verify/*` routes so provider credentials (Sapling, Sightengine) never reach the client.
+- **Content Provenance**: Checks image metadata and C2PA signals to verify content origin.
+- **Rate Limiting**: In-memory per-IP quota protection prevents abuse on detection endpoints.
+- **Stripe Integration**: Webhook-driven subscription management for Pro tier upgrades.
+
+---
+
+### 📁 Project structure
+```text
+/
+├── public/                     # Static assets and brand mark
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── checkout/       # Stripe checkout session creation
+│   │   │   ├── verify/
+│   │   │   │   ├── text/       # Text AI detection via Sapling
+│   │   │   │   ├── media/      # Image/deepfake analysis via Sightengine
+│   │   │   │   └── url/        # URL content fetching and detection
+│   │   │   └── webhooks/       # Stripe webhook handlers
+│   │   ├── admin/              # Admin dashboard pages
+│   │   ├── auth/               # Login, signup, and password recovery
+│   │   ├── profile/            # User scan history and settings
+│   │   ├── privacy/            # Privacy policy page
+│   │   ├── terms/              # Terms of service page
+│   │   └── layout.tsx          # Root layout with metadata and fonts
+│   ├── components/
+│   │   ├── admin/              # Admin-specific UI components
+│   │   ├── auth/               # Auth forms and OAuth buttons
+│   │   ├── landing/            # Landing page sections
+│   │   ├── layout/             # Shared layout components (Navbar, Footer)
+│   │   ├── scanner/            # Scanner hub and result display
+│   │   └── ui/                 # Reusable UI primitives
+│   ├── lib/                    # Supabase clients, Stripe, rate limiter, utils
+│   ├── services/               # Business logic and external API wrappers
+│   ├── hooks/                  # Custom React hooks
+│   ├── context/                # React context providers
+│   ├── types/                  # TypeScript type definitions
+│   └── middleware.ts           # Auth and route protection middleware
+├── .env.example                # Template for environment variables
+├── package.json                # Dependencies and scripts
+└── README.md                   # Project documentation
 ```
 
-## Supabase
+---
 
-The app expects a `scans` table with these columns:
-
-- `id` text or uuid primary key
-- `content_hash` text
-- `type` text
-- `truth_score` integer
-- `verdict` text
-- `confidence_level` text
-- `c2pa_verified` boolean
-- `detected_artifacts` jsonb
-- `evidence_tags` jsonb
-- `breakdown` jsonb
-- `metadata` jsonb
-- `user_id` uuid nullable
-- `ip_address` text nullable
-- `created_at` timestamptz
-
-Authenticated scans are associated to a user with `user_id`. Guest scans are associated to `ip_address` and capped at 3 scans before the upgrade modal is shown.
-
-## Architecture
-
-- `src/app/api/verify/text` handles text detection through Sapling.
-- `src/app/api/verify/media` handles image metadata checks and Sightengine analysis.
-- `src/app/api/verify/url` fetches public page text and sends it through Sapling.
-- `src/lib/rateLimit.ts` provides in-memory per-IP quota protection for detection routes.
-- `src/components/landing` contains the landing page sections.
-- `src/components/auth` contains Supabase login/signup UI.
-- `src/app/profile` shows authenticated scan history.
-
-## Production Notes
-
-- Rotate any API keys that were ever exposed.
-- Set `NEXT_PUBLIC_SITE_URL` to the deployed origin so sitemap, robots, and social metadata resolve correctly.
-- Use provider-level quotas in addition to the app's in-memory rate limiter for multi-instance deployments.
-- Keep `.env.local` and all real secrets out of Git.
-
-## Checks
-
-```bash
-npm run lint
-npm run build
-```
+### 👤 Author
+**Wayne** — [github.com/wayne2604](https://github.com/wayne2604)
