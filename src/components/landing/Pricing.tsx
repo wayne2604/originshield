@@ -1,6 +1,8 @@
 "use client";
 
-import { Check, Zap } from "lucide-react";
+import { useState } from "react";
+import { Check, Zap, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const PLANS = [
   {
@@ -14,6 +16,7 @@ const PLANS = [
     price: "$19",
     description: "For creators and small teams.",
     featured: true,
+    priceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
     features: ["Higher rate limits", "Saved profile history", "Evidence-backed reports", "Priority API capacity"],
   },
   {
@@ -25,6 +28,50 @@ const PLANS = [
 ];
 
 export default function Pricing() {
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const router = useRouter();
+
+  const handleCheckout = async (plan: typeof PLANS[0]) => {
+    if (plan.name === "Enterprise") {
+      router.push("mailto:hello@originshield.app");
+      return;
+    }
+
+    if (plan.name === "Starter") {
+      router.push("#input-hub");
+      return;
+    }
+
+    if (!plan.priceId) {
+      console.error("Price ID missing for plan:", plan.name);
+      return;
+    }
+
+    setLoadingPlan(plan.name);
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId: plan.priceId }),
+      });
+
+      const data = await res.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (res.status === 401) {
+        router.push("/auth");
+      } else {
+        throw new Error(data.error || "Failed to create checkout session");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
+
   return (
     <section id="pricing" className="relative z-10 py-16 sm:py-24 px-4">
       <div className="max-w-6xl mx-auto">
@@ -72,9 +119,17 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-              <a href="#input-hub" className={plan.featured ? "btn-neon mt-auto" : "btn-ghost mt-auto"}>
-                Start scanning
-              </a>
+              <button
+                onClick={() => handleCheckout(plan)}
+                disabled={loadingPlan !== null}
+                className={`w-full ${plan.featured ? "btn-neon" : "btn-ghost"} mt-auto flex items-center justify-center gap-2`}
+              >
+                {loadingPlan === plan.name ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  plan.name === "Enterprise" ? "Contact Sales" : plan.name === "Starter" ? "Start scanning" : "Upgrade Now"
+                )}
+              </button>
             </div>
           ))}
         </div>
